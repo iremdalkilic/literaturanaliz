@@ -1,0 +1,47 @@
+# ==============================================================================
+# Python derleme ve önbellek dosyaları
+# ==============================================================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+
+# Sanal ortamlar (Virtual Environments)
+.venv/
+venv/
+env/
+ENV/
+
+# ==============================================================================
+# Gizli anahtarlar, şifreler ve Streamlit yerel ayarları (ASLA GitHub'a gitmesin!)
+# ==============================================================================
+.env
+.env.*
+!.env.example
+.streamlit/secrets.toml
+secrets.toml
+
+# ==============================================================================
+# Geçici çıktı dosyaları, loglar ve kullanıcı indirmeleri
+# ==============================================================================
+*.log
+logs.txt
+cloudflared
+cloudflared.exe
+literatur_analiz_raporu.*
+literatur_analiz_verisi.json
+kaynakca.bib
+
+# ==============================================================================
+# İşletim sistemi ve IDE geçici dosyaları
+# ==============================================================================
+.DS_Store
+Thumbs.db
+desktop.ini
+~$*.docx
+~$*.xlsx
+.vscode/
+.idea/
+.ipynb_checkpoints/
