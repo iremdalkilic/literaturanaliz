@@ -259,18 +259,51 @@ def kullanilabilir_modelleri_getir(api_key, vertexai=False):
         return {}
 
 
+# Bir model adından aynı arka uç kümesini paylaşan temel aile anahtarını çıkarır (ör. "-001", "-preview-..." eklerini soyar).
+# Böylece 503 yoğunluğunda aynı modelin 5 kopyasını denemek yerine gerçekten FARKLI model ailelerine atlanır.
+def _model_ailesi_anahtari(model_id):
+    kucuk = (model_id or "").lower().strip()
+    # Tarih/sürüm son eklerini (-001, -preview-09-2025, -exp-03-25, -latest) temizleyip temel aileye indirger.
+    temel = re.sub(r"-(?:preview|exp|experimental|latest|\d{3,4})(?:-.*)?$", "", kucuk)
+    return temel or kucuk
+
+
+# Verilen model listesini aynı model ailesinin kopyalarını arkalara atıp FARKLI aileler en öne gelecek biçimde çeşitlendirir.
+def _cesitli_adaylari_sirala(aday_listesi, haric=None, limit=8):
+    haric_kume = set(haric or ())
+    haric_aileler = {_model_ailesi_anahtari(m) for m in haric_kume}
+    once_farkli_aile = []
+    sonra_diger = []
+    gorulen_idler = set()
+    gorulen_aileler = set()
+
+    for m in aday_listesi:
+        if not m or m in haric_kume or m in gorulen_idler:
+            continue
+        gorulen_idler.add(m)
+        aile = _model_ailesi_anahtari(m)
+        # Önce daha önce hiç denenmemiş FARKLI model ailelerinden 1'er temsilci seçer.
+        if aile not in haric_aileler and aile not in gorulen_aileler:
+            gorulen_aileler.add(aile)
+            once_farkli_aile.append(m)
+        else:
+            sonra_diger.append(m)
+
+    # Önce tamamen farklı aileleri, yer kalırsa kalan yedekleri ekleyip limite göre keser.
+    return (once_farkli_aile + sonra_diger)[:limit]
+
+
 # Tek bir uç noktada (Developer API veya Vertex AI) anahtarı ve erişilebilir modelleri sınayan yardımcı fonksiyon.
 def _uc_noktada_dogrula(temiz_anahtar, vertexai, tercih_edilen_model=None):
     # 1) Önce bu uç noktada erişilebilen canlı modelleri çekmeyi dener.
     canli_modeller = kullanilabilir_modelleri_getir(temiz_anahtar, vertexai=vertexai)
 
-    # 2) Test edilecek aday modellerin sırasını oluşturur (tercih edilen -> canlı modeller -> yedek liste).
-    adaylar = []
+    # 2) Test edilecek adayları farklı model aileleri öncelikli olacak biçimde çeşitlendirir.
+    ham_adaylar = []
     if tercih_edilen_model and (not canli_modeller or tercih_edilen_model in canli_modeller):
-        adaylar.append(tercih_edilen_model)
-    for m_id in list(canli_modeller.keys()) + list(YEDEK_MODEL_ADAYLARI):
-        if m_id not in adaylar:
-            adaylar.append(m_id)
+        ham_adaylar.append(tercih_edilen_model)
+    ham_adaylar.extend(list(canli_modeller.keys()) + list(YEDEK_MODEL_ADAYLARI))
+    adaylar = _cesitli_adaylari_sirala(ham_adaylar, limit=8)
 
     try:
         istemci = _istemci_al(temiz_anahtar, vertexai=vertexai)
@@ -429,12 +462,12 @@ def _gemini_cagir(api_key, model_adi, istek, config, deneme=3, vertexai=None):
                 continue
 
             # Seçilen model 404 (yok), 503 (anlık aşırı yoğunluk) veya 429 (model kotası dolu) verirse
-            # aynı yoğun modelde beklemek yerine anahtara açık sıradaki müsait Flash modeline anında geçer.
+            # aynı yoğun model ailesinde beklemek yerine tamamen FARKLI müsait model ailelerine anında geçer.
             if kod in (404, 503, 429) or "not found" in hata_metni or "high demand" in hata_metni or "unavailable" in hata_metni:
                 if yedek_kuyruk is None:
-                    # Önce anahtardan canlı listeyi çeker, arkasına standart yedek adayları ekler.
+                    # Önce anahtardan canlı listeyi çeker, arkasına standart yedek adayları ekleyip aile bazında çeşitlendirir.
                     canli = list(kullanilabilir_modelleri_getir(api_key, vertexai=vertexai).keys())
-                    yedek_kuyruk = [m for m in (canli + YEDEK_MODEL_ADAYLARI) if m not in denenen_modeller][:5]
+                    yedek_kuyruk = _cesitli_adaylari_sirala(canli + YEDEK_MODEL_ADAYLARI, haric=denenen_modeller, limit=8)
                 if yedek_kuyruk:
                     aktif_model = yedek_kuyruk.pop(0)
                     denenen_modeller.add(aktif_model)
